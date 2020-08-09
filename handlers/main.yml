@@ -1,0 +1,19 @@
+---
+# - name: 'restart promxy'
+#   service:
+#     name: "promxy"
+#     state: "restarted"
+#     enabled: yes
+
+- name: 'restart promxy'
+  run_once: true
+  with_items: "{{ ansible_play_hosts }}"
+  delegate_to: "{{ host }}"
+  loop_control:
+    label: "restart: {{ host }}"
+    loop_var: host
+  service:
+    name: "promxy"
+    state: "restarted"
+    enabled: yes
+

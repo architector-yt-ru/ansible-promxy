@@ -1,0 +1,8 @@
+---
+
+promxy_target_group: ''
+promxy_target_default: [ 'localhost' ]
+promxy_target_port: 9090
+
+promxy_targets: []
+promxy_targets_default: [ 'localhost:9090' ]

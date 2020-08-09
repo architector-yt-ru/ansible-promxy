@@ -1,0 +1,107 @@
+---
+
+- name: getting latest release promxy
+  uri:                                                               
+    url: https://api.github.com/repos/jacksontj/promxy/releases/latest
+    return_content: true                                             
+  register: json_reponse                                             
+  tags: [ promxy, packages ]
+
+- name: 'setting variables'
+  set_fact: "{{item.key}}={{item.value}}"
+  with_dict: { tag: "{{ json_reponse.json.name }}" }
+  loop_control:
+    label: "{{item.key}} -> {{item.value}}"
+  tags: [ promxy, packages ]
+
+- name: creating directories
+  file: path={{ item }} state=directory force=yes mode=0700
+  with_items:
+    - /etc/promxy
+    - /tmp/promxy
+  diff: no
+  check_mode: no
+  tags: [ promxy, packages ]
+
+- name: getting promxy ({{ tag }}) binaries
+  get_url:
+    url: "https://github.com/jacksontj/promxy/releases/download/{{ tag }}/{{ item }}-{{ tag }}-linux-amd64"
+    dest: "/tmp/promxy/{{ item }}-{{ tag }}-linux-amd64"
+  with_items:
+    - promxy
+    - remote_write_exporter
+  register: _package
+  tags: [ promxy, packages ]
+
+- name: propagating promxy binaries
+  copy:
+    src: "/tmp/promxy/{{ item }}-{{ tag }}-linux-amd64"
+    dest: "/usr/local/bin/{{ item }}"
+    mode: 0755
+    owner: root
+    group: root
+    remote_src: yes
+  with_items:
+    - promxy
+    - remote_write_exporter
+  when: 
+    - not ansible_check_mode
+    - _package.changed
+  notify:
+    - restart promxy
+  tags: [ promxy, packages ]
+
+- name: CONFIGURE configure prometheus
+  template:
+    src: etc/promxy/config.yaml
+    dest: /etc/promxy/config.yaml
+    force: true
+    owner: root
+    group: root
+    mode: 0640
+    # validate: "/usr/bin/promtool check config %s"
+  notify:
+    - restart promxy
+  tags: [ promxy, configs ]
+
+- name: Creating service config
+  copy:
+    dest: "/etc/systemd/system/promxy.service"
+    owner: root
+    group: root
+    mode: 0644
+    content: |
+      [Unit]
+      Description=Prometheus Proxy - https://github.com/jacksontj/promxy
+      After=network-online.target
+
+      [Service]
+      User=root
+      Type=simple
+      StartLimitBurst=5
+      StartLimitInterval=0
+      Restart=on-failure
+      RestartSec=1
+      PIDFile=/run/promxy/promxy.pid
+      ExecStart=/usr/local/bin/promxy --bind-addr=:8082 --config=/etc/promxy/config.yaml
+      ExecStop=/bin/kill -s SIGTERM $MAINPID
+
+      [Install]
+      WantedBy=multi-user.target
+  notify:
+    - restart promxy
+  tags: [ promxy, service, systemd ]
+
+- name: Reloading systemd
+  systemd:
+    daemon_reload: true
+    name: "promxy"
+  tags: [ promxy, service, systemd ]
+
+- name: Starting services
+  service:
+    name: "promxy"
+    state: "started"
+    enabled: yes
+  tags: [ promxy, service, systemd ]
+
